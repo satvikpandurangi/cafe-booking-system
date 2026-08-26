@@ -52,6 +52,7 @@ export const otpRequestLimiter = rateLimit({
   message: { error: 'Too many OTP requests. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false }
 });
 
 /**
@@ -63,6 +64,7 @@ export const otpVerifyLimiter = rateLimit({
   message: { error: 'Too many verification attempts. Please wait a few minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false }
 });
 
 /**
@@ -74,6 +76,7 @@ export const adminLoginLimiter = rateLimit({
   message: { error: 'Too many login attempts. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false }
 });
 
 /**
