@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Trust first proxy hop when behind Nginx / Caddy / Cloudflare / Vercel
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
   app.set('trust proxy', 1);
 }
 
@@ -50,8 +50,8 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health Check (Top-level, does not block on database)
-app.get('/api/health', (req, res) => {
+// Health Check (Handles both /api/health and /health)
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -59,52 +59,69 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Ensure database tables and initial records exist before handling API requests
-app.use('/api', async (req, res, next) => {
+// Auto-initialize DB before API routes
+app.use(async (req, res, next) => {
+  // Skip DB init for health check
+  if (req.path === '/health' || req.path === '/api/health') {
+    return next();
+  }
   try {
     await initDatabase();
     next();
   } catch (err: any) {
     console.error('[DB Initialization Error]:', err);
     res.status(500).json({
-      error: 'Database connection failed.',
+      error: 'Database initialization failed.',
       message: err.message || 'Please configure TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Vercel Environment Variables.'
     });
   }
 });
 
-// Mount API Modules
+// Mount API Modules (support both /api/* and /* paths on Vercel Functions)
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
+
 app.use('/api/table', tableRoutes);
+app.use('/table', tableRoutes);
+
 app.use('/api/menu', menuRoutes);
+app.use('/menu', menuRoutes);
+
 app.use('/api/orders', orderRoutes);
+app.use('/orders', orderRoutes);
+
 app.use('/api/payments', paymentRoutes);
+app.use('/payments', paymentRoutes);
+
 app.use('/api/admin', adminRoutes);
+app.use('/admin', adminRoutes);
 
-// In production standalone mode, serve frontend client build
-const clientDistPath = path.resolve(process.cwd(), 'dist', 'client');
-app.use(express.static(clientDistPath));
+// In standalone local server mode, serve static client files if available
+if (!process.env.VERCEL) {
+  const clientDistPath = path.resolve(process.cwd(), 'dist', 'client');
+  app.use(express.static(clientDistPath));
 
-app.get('*', (req: Request, res: Response) => {
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  const indexPath = path.join(clientDistPath, 'index.html');
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      res.status(200).send(`
-        <!DOCTYPE html>
-        <html>
-          <head><title>Cafe Booking & Ordering API</title></head>
-          <body style="font-family: system-ui; padding: 2rem; background: #fdfbf7; color: #342218;">
-            <h1>☕ Cafe Booking & Ordering API Server</h1>
-            <p>API is running on port ${PORT}.</p>
-          </body>
-        </html>
-      `);
+  app.get('*', (req: Request, res: Response) => {
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
     }
+    const indexPath = path.join(clientDistPath, 'index.html');
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        res.status(200).send(`
+          <!DOCTYPE html>
+          <html>
+            <head><title>Cafe Booking & Ordering API</title></head>
+            <body style="font-family: system-ui; padding: 2rem; background: #fdfbf7; color: #342218;">
+              <h1>☕ Cafe Booking & Ordering API Server</h1>
+              <p>API is running on port ${PORT}.</p>
+            </body>
+          </html>
+        `);
+      }
+    });
   });
-});
+}
 
 // Central Global Error Handler
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
