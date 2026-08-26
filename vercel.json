@@ -1,11 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "npm run build:client",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/api/index.js"
     },
     {
       "source": "/(.*)",
