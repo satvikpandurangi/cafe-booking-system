@@ -1,4 +1,5 @@
-import { createClient, Client, Transaction } from '@libsql/client';
+import { createClient as createWebClient, Client, Transaction } from '@libsql/client/web';
+import { createClient as createNodeClient } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
@@ -6,65 +7,51 @@ import { hashPassword, hashToken, generateOpaqueToken } from '../utils/crypto';
 
 dotenv.config();
 
-function getDatabaseConfig(): { url: string; authToken?: string } {
+let clientInstance: Client | null = null;
+
+export function getClient(): Client {
+  if (clientInstance) {
+    return clientInstance;
+  }
+
   const tursoUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
   const tursoToken = process.env.TURSO_AUTH_TOKEN;
 
   if (tursoUrl) {
-    return {
+    // Pure HTTPS web client — zero native binaries, works 100% on Vercel / AWS Lambda
+    clientInstance = createWebClient({
       url: tursoUrl,
       authToken: tursoToken
-    };
+    });
+    return clientInstance;
   }
 
-  // If running in Vercel or Lambda serverless environment without Turso credentials
-  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    return {
-      url: 'file:/tmp/cafe.db'
-    };
-  }
-
-  // Local file-based fallback for local dev / offline testing
-  const localDbPath = process.env.DATABASE_PATH || './data/cafe.db';
-  const absoluteDbPath = path.resolve(process.cwd(), localDbPath);
-  const dbDir = path.dirname(absoluteDbPath);
-  
-  try {
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
+  // Local development fallback
+  if (!process.env.VERCEL) {
+    const localDbPath = process.env.DATABASE_PATH || './data/cafe.db';
+    const absoluteDbPath = path.resolve(process.cwd(), localDbPath);
+    const dbDir = path.dirname(absoluteDbPath);
+    
+    try {
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+      clientInstance = createNodeClient({
+        url: `file:${absoluteDbPath.replace(/\\/g, '/')}`
+      });
+      return clientInstance;
+    } catch (e) {
+      // Fallback
     }
-    return {
-      url: `file:${absoluteDbPath.replace(/\\/g, '/')}`
-    };
-  } catch (e) {
-    return {
-      url: 'file:/tmp/cafe.db'
-    };
   }
+
+  throw new Error('TURSO_DATABASE_URL is not configured in Vercel Environment Variables. Please set up your Turso database and add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in your Vercel Project Settings.');
 }
-
-let clientInstance: Client | null = null;
-
-export function getClient(): Client {
-  if (!clientInstance) {
-    const config = getDatabaseConfig();
-    clientInstance = createClient(config);
-  }
-  return clientInstance;
-}
-
-export const client = {
-  execute: (stmt: any) => getClient().execute(stmt),
-  batch: (stmts: any, mode: any) => getClient().batch(stmts, mode),
-  transaction: (mode: any) => getClient().transaction(mode)
-} as unknown as Client;
 
 /**
  * Serverless & LibSQL/Turso Database Abstraction
  */
 export const db = {
-  client,
-
   /**
    * Execute single query and return all matching rows as typed objects
    */

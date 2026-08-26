@@ -50,18 +50,21 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health Check (Handles both /api/health and /health)
+// Health Check (Always returns 200 OK and reports Turso config status)
 app.get(['/api/health', '/health'], (req, res) => {
+  const hasTurso = Boolean(process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL);
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    database: (process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL) ? 'turso_configured' : 'local_or_fallback'
+    database: hasTurso ? 'turso_configured' : 'turso_missing',
+    message: hasTurso 
+      ? 'Database configured with Turso.' 
+      : 'API is running. Add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Vercel settings to activate database storage.'
   });
 });
 
 // Auto-initialize DB before API routes
 app.use(async (req, res, next) => {
-  // Skip DB init for health check
   if (req.path === '/health' || req.path === '/api/health') {
     return next();
   }
@@ -70,8 +73,8 @@ app.use(async (req, res, next) => {
     next();
   } catch (err: any) {
     console.error('[DB Initialization Error]:', err);
-    res.status(500).json({
-      error: 'Database initialization failed.',
+    res.status(503).json({
+      error: 'Database not connected',
       message: err.message || 'Please configure TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Vercel Environment Variables.'
     });
   }
