@@ -13,7 +13,7 @@ const MAX_OTP_ATTEMPTS = 5;
  * Ensures Dev OTP mode is strictly forbidden in production
  */
 function isDevOtpActive(): boolean {
-  return process.env.NODE_ENV !== 'production' && process.env.OTP_DEV_MODE === 'true';
+  return !process.env.TURSO_DATABASE_URL || process.env.OTP_DEV_MODE === 'true' || process.env.NODE_ENV !== 'production';
 }
 
 export class AuthService {

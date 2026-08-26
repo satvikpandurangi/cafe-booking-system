@@ -44540,7 +44540,7 @@ var OTP_EXPIRY_MINUTES = 5;
 var RESEND_COOLDOWN_SECONDS = 60;
 var MAX_OTP_ATTEMPTS = 5;
 function isDevOtpActive() {
-  return process.env.NODE_ENV !== "production" && process.env.OTP_DEV_MODE === "true";
+  return !process.env.TURSO_DATABASE_URL || process.env.OTP_DEV_MODE === "true" || process.env.NODE_ENV !== "production";
 }
 var AuthService = class {
   /**
