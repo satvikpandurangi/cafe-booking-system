@@ -50087,7 +50087,7 @@ router3.get("/categories", async (req, res) => {
   const categories = await MenuService.getCategories();
   return res.json({ categories });
 });
-router3.get("/", async (req, res) => {
+router3.get(["/", "/items"], async (req, res) => {
   const categoryId = req.query.categoryId ? Number(req.query.categoryId) : void 0;
   const search = typeof req.query.search === "string" ? req.query.search : void 0;
   const items = await MenuService.getMenuItems({

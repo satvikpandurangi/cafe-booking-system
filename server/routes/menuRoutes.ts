@@ -15,7 +15,7 @@ router.get('/categories', async (req: Request, res: Response) => {
  * GET /api/menu
  * Optional query params: categoryId (number), search (string)
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get(['/', '/items'], async (req: Request, res: Response) => {
   const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
 
