@@ -25,7 +25,7 @@ if (process.env.NODE_ENV === 'production') {
 
 // Security Middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Allows flexible SPA inline styles and image assets
+  contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
@@ -35,8 +35,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, same-origin, curl) or if origin is in whitelist
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || process.env.VERCEL) {
       callback(null, true);
     } else {
       callback(new Error('Blocked by CORS policy'));
@@ -51,19 +50,27 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Health Check (Top-level, does not block on database)
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: (process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL) ? 'turso_configured' : 'local_or_fallback'
+  });
+});
+
 // Ensure database tables and initial records exist before handling API requests
 app.use('/api', async (req, res, next) => {
   try {
     await initDatabase();
-  } catch (err) {
-    console.warn('[DB AutoInit Note]:', err);
+    next();
+  } catch (err: any) {
+    console.error('[DB Initialization Error]:', err);
+    res.status(500).json({
+      error: 'Database connection failed.',
+      message: err.message || 'Please configure TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Vercel Environment Variables.'
+    });
   }
-  next();
-});
-
-// Health Check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Mount API Modules
@@ -85,7 +92,6 @@ app.get('*', (req: Request, res: Response) => {
   const indexPath = path.join(clientDistPath, 'index.html');
   res.sendFile(indexPath, (err) => {
     if (err) {
-      // If client build doesn't exist yet (in dev), return friendly status
       res.status(200).send(`
         <!DOCTYPE html>
         <html>
@@ -93,7 +99,6 @@ app.get('*', (req: Request, res: Response) => {
           <body style="font-family: system-ui; padding: 2rem; background: #fdfbf7; color: #342218;">
             <h1>☕ Cafe Booking & Ordering API Server</h1>
             <p>API is running on port ${PORT}.</p>
-            <p>Frontend development server runs on <a href="http://localhost:5173">http://localhost:5173</a>.</p>
           </body>
         </html>
       `);
@@ -104,9 +109,8 @@ app.get('*', (req: Request, res: Response) => {
 // Central Global Error Handler
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   console.error('[Server Error]:', err);
-  const isProd = process.env.NODE_ENV === 'production';
-  const message = !isProd && err instanceof Error ? err.message : undefined;
-  res.status(500).json({ error: 'An unexpected server error occurred.', ...(message ? { message } : {}) });
+  const message = err instanceof Error ? err.message : String(err);
+  res.status(500).json({ error: 'An unexpected server error occurred.', message });
 });
 
 // Export app for testing (Supertest) and Vercel Functions

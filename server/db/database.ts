@@ -43,8 +43,21 @@ function getDatabaseConfig(): { url: string; authToken?: string } {
   }
 }
 
-const config = getDatabaseConfig();
-export const client: Client = createClient(config);
+let clientInstance: Client | null = null;
+
+export function getClient(): Client {
+  if (!clientInstance) {
+    const config = getDatabaseConfig();
+    clientInstance = createClient(config);
+  }
+  return clientInstance;
+}
+
+export const client = {
+  execute: (stmt: any) => getClient().execute(stmt),
+  batch: (stmts: any, mode: any) => getClient().batch(stmts, mode),
+  transaction: (mode: any) => getClient().transaction(mode)
+} as unknown as Client;
 
 /**
  * Serverless & LibSQL/Turso Database Abstraction
@@ -56,7 +69,8 @@ export const db = {
    * Execute single query and return all matching rows as typed objects
    */
   async all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-    const res = await client.execute({ sql, args: params });
+    const cl = getClient();
+    const res = await cl.execute({ sql, args: params });
     return res.rows as unknown as T[];
   },
 
@@ -64,7 +78,8 @@ export const db = {
    * Execute single query and return the first matching row or null
    */
   async get<T = any>(sql: string, params: any[] = []): Promise<T | null> {
-    const res = await client.execute({ sql, args: params });
+    const cl = getClient();
+    const res = await cl.execute({ sql, args: params });
     if (!res.rows || res.rows.length === 0) {
       return null;
     }
@@ -75,7 +90,8 @@ export const db = {
    * Execute INSERT/UPDATE/DELETE query and return lastInsertRowid and affected rows count
    */
   async run(sql: string, params: any[] = []): Promise<{ lastInsertRowid: number; changes: number }> {
-    const res = await client.execute({ sql, args: params });
+    const cl = getClient();
+    const res = await cl.execute({ sql, args: params });
     return {
       lastInsertRowid: Number(res.lastInsertRowid ?? 0),
       changes: res.rowsAffected
@@ -86,13 +102,14 @@ export const db = {
    * Execute raw SQL string (can contain multiple statements)
    */
   async exec(sql: string): Promise<void> {
+    const cl = getClient();
     const statements = sql
       .split(';')
       .map(s => s.trim())
       .filter(s => s.length > 0);
 
     for (const stmt of statements) {
-      await client.execute(stmt);
+      await cl.execute(stmt);
     }
   },
 
@@ -100,15 +117,17 @@ export const db = {
    * Execute multiple statements in an atomic batch
    */
   async batch(statements: Array<{ sql: string; args?: any[] } | string>): Promise<void> {
+    const cl = getClient();
     const stmts = statements.map(s => (typeof s === 'string' ? { sql: s, args: [] } : { sql: s.sql, args: s.args || [] }));
-    await client.batch(stmts, 'write');
+    await cl.batch(stmts, 'write');
   },
 
   /**
    * Interactive atomic transaction with rollback support
    */
   async transaction<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
-    const tx = await client.transaction('write');
+    const cl = getClient();
+    const tx = await cl.transaction('write');
     try {
       const result = await fn(tx);
       await tx.commit();
@@ -252,6 +271,7 @@ let isInitialized = false;
 export async function initDatabase(): Promise<void> {
   if (isInitialized) return;
 
+  const cl = getClient();
   const statements = SCHEMA_SQL
     .split(';')
     .map(s => s.trim())
@@ -259,7 +279,7 @@ export async function initDatabase(): Promise<void> {
 
   for (const statement of statements) {
     try {
-      await client.execute(statement);
+      await cl.execute(statement);
     } catch (err: any) {
       if (!err.message?.includes('already exists')) {
         console.warn(`[Schema Note]: ${err.message}`);
