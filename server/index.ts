@@ -23,11 +23,6 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
-// Initialize Database in background during server start
-initDatabase().catch(err => {
-  console.warn('[Database Init Note]:', err.message);
-});
-
 // Security Middleware
 app.use(helmet({
   contentSecurityPolicy: false, // Allows flexible SPA inline styles and image assets
@@ -55,6 +50,16 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Ensure database tables and initial records exist before handling API requests
+app.use('/api', async (req, res, next) => {
+  try {
+    await initDatabase();
+  } catch (err) {
+    console.warn('[DB AutoInit Note]:', err);
+  }
+  next();
+});
 
 // Health Check
 app.get('/api/health', (req, res) => {
