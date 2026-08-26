@@ -72,6 +72,3 @@ npm run dev
 For complete production deployment instructions using Vercel and Turso, see [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md).
 
 ---
-
-## 📄 License
-MIT
